@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"time"
 
 	"github.com/kartFr/Asset-Reuploader/internal/retry"
 	"github.com/kartFr/Asset-Reuploader/internal/roblox"
@@ -46,7 +45,7 @@ func UserGames(c *roblox.Client, userID int64) (*GamesResponse, error) {
 	}
 
 	return retry.Do(
-		retry.NewOptions(retry.Tries(5), retry.Delay(500*time.Millisecond)),
+		retry.NewOptions(retry.Tries(3)),
 		func(_ int) (*GamesResponse, error) {
 			placeDetails, err := handler()
 			if err != nil {

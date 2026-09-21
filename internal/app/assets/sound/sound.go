@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"slices"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -81,7 +82,7 @@ func Reupload(ctx *context.Context, r *request.Request) {
 	creatorPlaceMap := shardedmap.New[*atomicarray.AtomicArray[int64]]()
 	creatorMutexMap := shardedmap.New[*sync.RWMutex]()
 
-	uploadQueue := taskqueue.NewSmoothQueue[int64](30, 500)
+	uploadQueue := taskqueue.New[int64](time.Minute, 120)
 	permissionQueue := taskqueue.New[*assets.PermissionResponse](time.Minute, 60)
 	permissionRequest := assetutils.NewPermissionBodyFromIds([]int64{r.UniverseID})
 
@@ -110,7 +111,7 @@ func Reupload(ctx *context.Context, r *request.Request) {
 
 		res := <-permissionQueue.QueueTask(func() (*assets.PermissionResponse, error) {
 			return retry.Do(
-				retry.NewOptions(retry.Tries(6), retry.Delay(800*time.Millisecond)),
+				retry.NewOptions(retry.Tries(3)),
 				func(try int) (*assets.PermissionResponse, error) {
 					pauseController.WaitIfPaused()
 					if try > 1 {
@@ -157,7 +158,7 @@ func Reupload(ctx *context.Context, r *request.Request) {
 
 		res := <-uploadQueue.QueueTask(func() (int64, error) {
 			return retry.Do(
-				retry.NewOptions(retry.Tries(6), retry.Delay(800*time.Millisecond)),
+				retry.NewOptions(retry.Tries(3)),
 				func(try int) (int64, error) {
 					pauseController.WaitIfPaused()
 					if try > 1 {
@@ -279,7 +280,7 @@ func Reupload(ctx *context.Context, r *request.Request) {
 		}
 
 		return retry.Do(
-			retry.NewOptions(retry.Tries(6), retry.Delay(800*time.Millisecond)),
+			retry.NewOptions(retry.Tries(3)),
 			func(try int) ([]*assetdelivery.AssetLocation, error) {
 				pauseController.WaitIfPaused()
 
@@ -330,15 +331,14 @@ func Reupload(ctx *context.Context, r *request.Request) {
 			}
 
 			var hadSuccess bool
-			for assetIndex := len(assetLocations) - 1; assetIndex >= 0; assetIndex-- {
-				assetLocation := assetLocations[assetIndex]
+			for assetIndex, assetLocation := range slices.Backward(assetLocations) {
 				if len(assetLocation.Locations) == 0 {
 					continue
 				}
 				hadSuccess = true
 
 				assetID := body[assetIndex].AssetID
-				body = append(body[:assetIndex], body[assetIndex+1:]...)
+				body = slices.Delete(body, assetIndex, assetIndex+1)
 
 				uploadWG.Add(1)
 				go uploadAsset(&uploadWG, assetInfoMap[assetID], assetLocation.Locations[0].Location)
